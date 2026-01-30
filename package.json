@@ -7,10 +7,25 @@
   "bin": {
     "mcp-intervals": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "intervals",
+    "task-management"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/educlopez/mcp-intervals.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
