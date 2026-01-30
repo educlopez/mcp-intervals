@@ -16,6 +16,13 @@ MCP server for [Intervals](https://www.myintervals.com/) task management. Lets C
 ### 2. Install in Claude Code
 
 ```bash
+# Available in all your projects (recommended)
+claude mcp add intervals --scope user -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
+
+# Only in the current project, shared with team via .mcp.json (committed to git)
+claude mcp add intervals --scope project -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
+
+# Only for you in the current project (default)
 claude mcp add intervals -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
 ```
 
@@ -86,20 +93,20 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `get_task` | Get task details by local ID or Intervals URL |
-| `update_task` | Update task status, assignee, priority, title, due date, or owner |
-| `add_task_note` | Add a comment/note to a task (supports HTML) |
-| `get_task_notes` | Retrieve all comments/notes on a task |
-| `get_project` | Get project details (name, client, dates, budget) |
-| `get_milestone` | Get milestone details (title, due date, progress) |
+| Tool             | Description                                                       |
+| ---------------- | ----------------------------------------------------------------- |
+| `get_task`       | Get task details by local ID or Intervals URL                     |
+| `update_task`    | Update task status, assignee, priority, title, due date, or owner |
+| `add_task_note`  | Add a comment/note to a task (supports HTML)                      |
+| `get_task_notes` | Retrieve all comments/notes on a task                             |
+| `get_project`    | Get project details (name, client, dates, budget)                 |
+| `get_milestone`  | Get milestone details (title, due date, progress)                 |
 
 ## Resources
 
-| Resource | URI | Description |
-|----------|-----|-------------|
-| Task Statuses | `intervals://statuses` | List of all status IDs for use with `update_task` |
+| Resource        | URI                      | Description                                         |
+| --------------- | ------------------------ | --------------------------------------------------- |
+| Task Statuses   | `intervals://statuses`   | List of all status IDs for use with `update_task`   |
 | Task Priorities | `intervals://priorities` | List of all priority IDs for use with `update_task` |
 
 ## Example Usage
