@@ -61,6 +61,24 @@ export class IntervalsClient {
     return data;
   }
 
+  async getTaskByLocalId(localId: number) {
+    const data = await this.request<{
+      task?: Array<Record<string, unknown>>;
+      listcount?: number;
+    }>(`/task/`, { params: { localid: localId } });
+
+    if (!data.task || data.task.length === 0) {
+      throw new Error(`No task found with local ID ${localId}`);
+    }
+
+    return data.task[0];
+  }
+
+  async resolveTaskId(localId: number): Promise<number> {
+    const task = await this.getTaskByLocalId(localId);
+    return Number(task.id);
+  }
+
   async updateTask(id: number, fields: Record<string, unknown>) {
     const data = await this.request<Record<string, unknown>>(
       `/task/${id}/`,

@@ -10,17 +10,17 @@ export function registerTools(
   // --- get_task ---
   server.tool(
     "get_task",
-    "Retrieve full details of an Intervals task. Accepts a task URL (e.g. https://<subdomain>.intervalsonline.com/tasks/view/12345) or a numeric task ID.",
+    "Retrieve full details of an Intervals task. Accepts a task URL (e.g. https://<subdomain>.intervalsonline.com/tasks/view/12345) or a numeric local task ID (the ID shown in the Intervals web UI).",
     {
       task: z
         .string()
         .describe(
-          "Intervals task URL or numeric task ID"
+          "Intervals task URL or numeric local task ID (as shown in the web UI)"
         ),
     },
     async ({ task }) => {
-      const taskId = parseTaskIdFromUrl(task);
-      const data = await client.getTask(taskId);
+      const localId = parseTaskIdFromUrl(task);
+      const data = await client.getTaskByLocalId(localId);
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
@@ -34,7 +34,7 @@ export function registerTools(
     "update_task",
     "Update fields on an Intervals task (status, assignee, priority, title, due date, owner).",
     {
-      taskId: z.number().describe("The numeric task ID"),
+      taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       statusid: z
         .number()
         .optional()
@@ -77,7 +77,8 @@ export function registerTools(
         };
       }
 
-      const data = await client.updateTask(taskId, updateData);
+      const internalId = await client.resolveTaskId(taskId);
+      const data = await client.updateTask(internalId, updateData);
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
@@ -91,7 +92,7 @@ export function registerTools(
     "add_task_note",
     "Add a comment/note to an Intervals task.",
     {
-      taskId: z.number().describe("The numeric task ID"),
+      taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       note: z
         .string()
         .describe("The note content (HTML is accepted)"),
@@ -103,8 +104,9 @@ export function registerTools(
         ),
     },
     async ({ taskId, note, isPublic }) => {
+      const internalId = await client.resolveTaskId(taskId);
       const data = await client.addTaskNote(
-        taskId,
+        internalId,
         note,
         isPublic
       );
@@ -123,10 +125,11 @@ export function registerTools(
     {
       taskId: z
         .number()
-        .describe("The numeric task ID"),
+        .describe("The local task ID (as shown in the Intervals web UI)"),
     },
     async ({ taskId }) => {
-      const data = await client.getTaskNotes(taskId);
+      const internalId = await client.resolveTaskId(taskId);
+      const data = await client.getTaskNotes(internalId);
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
