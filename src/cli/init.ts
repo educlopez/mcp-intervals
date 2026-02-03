@@ -5,6 +5,16 @@ import pc from "picocolors";
 import { detectClients, configureClient, hasExistingConfig } from "./clients.js";
 import { validateToken } from "./api.js";
 import { searchMultiselect, cancelSymbol } from "./prompts/search-multiselect.js";
+import {
+  detectShell,
+  getProfilePath,
+  findExistingToken,
+  saveTokenToProfile,
+  getReloadCommand,
+  getManualInstruction,
+  type ShellType,
+  type ShellInfo,
+} from "./shell.js";
 
 // Logo ASCII art with gradient grays (256-color)
 const LOGO_LINES = [
@@ -42,6 +52,15 @@ function shortenPath(fullPath: string): string {
   return fullPath;
 }
 
+function maskToken(token: string): string {
+  if (token.length <= 6) {
+    return "***";
+  }
+  const start = token.slice(0, 4);
+  const end = token.slice(-3);
+  return `${start}***${end}`;
+}
+
 async function main() {
   showLogo();
   console.log();
@@ -50,7 +69,108 @@ async function main() {
 
   const spinner = p.spinner();
 
-  // Detect clients
+  // Step 1: Detect shell
+  spinner.start("Detecting shell...");
+  let shellInfo: ShellInfo = detectShell();
+  spinner.stop(
+    shellInfo.detected
+      ? `Detected ${shellInfo.type} shell`
+      : `Could not detect shell, assuming ${shellInfo.type}`
+  );
+
+  // If shell not detected, ask user
+  if (!shellInfo.detected) {
+    console.log();
+    const selectedShell = await p.select({
+      message: "Which shell do you use?",
+      options: [
+        { value: "zsh", label: "zsh" },
+        { value: "bash", label: "bash" },
+        { value: "powershell", label: "PowerShell" },
+      ],
+    });
+
+    if (p.isCancel(selectedShell)) {
+      p.cancel("Installation cancelled");
+      process.exit(0);
+    }
+
+    shellInfo = {
+      type: selectedShell as ShellType,
+      profilePath: getProfilePath(selectedShell as ShellType),
+      detected: true,
+    };
+  }
+
+  // Step 2: Check for existing token
+  const existingToken = findExistingToken(shellInfo.profilePath, shellInfo.type);
+  let token: string | symbol;
+
+  if (existingToken.found && existingToken.value) {
+    console.log();
+    p.log.info(`Found existing token: ${pc.cyan(existingToken.partial)}`);
+    p.log.message(pc.dim(`  in ${shortenPath(shellInfo.profilePath)}`));
+
+    const replaceToken = await p.select({
+      message: "What do you want to do?",
+      options: [
+        { value: "keep", label: "Keep existing token" },
+        { value: "replace", label: "Replace with new token" },
+      ],
+    });
+
+    if (p.isCancel(replaceToken)) {
+      p.cancel("Installation cancelled");
+      process.exit(0);
+    }
+
+    if (replaceToken === "keep") {
+      token = existingToken.value;
+    } else {
+      console.log();
+      token = await p.password({
+        message: "Enter your new Intervals API token:",
+      });
+    }
+  } else {
+    // No existing token, ask for one
+    console.log();
+    token = await p.password({
+      message: "Enter your Intervals API token:",
+    });
+  }
+
+  if (p.isCancel(token) || !token || token.trim() === "") {
+    p.cancel("No token provided");
+    process.exit(1);
+  }
+
+  const finalToken = token.trim();
+
+  // Step 3: Validate token
+  spinner.start("Validating token...");
+  const validation = await validateToken(finalToken);
+
+  if (!validation.valid) {
+    spinner.stop(pc.red("Token validation failed"));
+    p.log.error(validation.error || "Invalid token");
+    p.log.message(pc.dim("  Find your API token at: https://[subdomain].myintervals.com/account/api/"));
+    console.log();
+
+    const continueAnyway = await p.confirm({
+      message: "Save configuration anyway (without validation)?",
+      initialValue: false,
+    });
+
+    if (p.isCancel(continueAnyway) || !continueAnyway) {
+      p.cancel("Installation cancelled");
+      process.exit(1);
+    }
+  } else {
+    spinner.stop(`Token valid! Connected to "${validation.workspace}"`);
+  }
+
+  // Step 4: Detect MCP clients
   spinner.start("Detecting MCP clients...");
   const clients = detectClients();
   const detectedClients = clients.filter((c) => c.detected);
@@ -72,13 +192,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Select clients with search multiselect
+  // Step 5: Select clients
   const clientChoices = detectedClients.map((client) => {
     const hasExisting = hasExistingConfig(client.configPath);
     return {
       value: client.id,
       label: client.name,
-      hint: shortenPath(client.configPath) + (hasExisting ? " - will overwrite" : ""),
+      hint: shortenPath(client.configPath) + (hasExisting ? " - will update" : ""),
     };
   });
 
@@ -104,46 +224,14 @@ async function main() {
     Array.isArray(selectedIds) && selectedIds.includes(c.id)
   );
 
-  // Get API token
+  // Step 6: Show summary and confirm
   console.log();
-  const token = await p.password({
-    message: "Enter your Intervals API token:",
-  });
-
-  if (p.isCancel(token) || !token || token.trim() === "") {
-    p.cancel("No token provided");
-    process.exit(1);
-  }
-
-  // Validate token
-  spinner.start("Validating token...");
-  const validation = await validateToken(token.trim());
-
-  if (!validation.valid) {
-    spinner.stop(pc.red("Token validation failed"));
-    p.log.error(validation.error || "Invalid token");
-    p.log.message(pc.dim("  Find your API token at: https://[subdomain].myintervals.com/account/api/"));
-    console.log();
-
-    const continueAnyway = await p.confirm({
-      message: "Save configuration anyway (without validation)?",
-      initialValue: false,
-    });
-
-    if (p.isCancel(continueAnyway) || !continueAnyway) {
-      p.cancel("Installation cancelled");
-      process.exit(1);
-    }
-  } else {
-    spinner.stop(`Token valid! Connected to "${validation.workspace}"`);
-  }
-
-  // Show summary and confirm
-  console.log();
-  const summaryLines: string[] = [];
-  for (const client of selectedClients) {
-    summaryLines.push(`${pc.cyan(client.name)}  ${pc.dim(shortenPath(client.configPath))}`);
-  }
+  const summaryLines: string[] = [
+    `${pc.bold("Token:")} ${shortenPath(shellInfo.profilePath)}`,
+    "",
+    pc.bold("MCP clients:"),
+    ...selectedClients.map((c) => `  ${c.name}  ${pc.dim(shortenPath(c.configPath))}`),
+  ];
   p.note(summaryLines.join("\n"), "Will configure");
 
   const confirmed = await p.confirm({
@@ -156,19 +244,36 @@ async function main() {
     process.exit(0);
   }
 
-  // Configure each client
-  spinner.start("Saving configuration...");
+  // Step 7: Save token to shell profile
+  spinner.start("Saving token to shell profile...");
+  const tokenResult = saveTokenToProfile(shellInfo.profilePath, shellInfo.type, finalToken);
+
+  if (!tokenResult.success) {
+    spinner.stop(pc.red("Failed to save token"));
+    console.log();
+    p.log.error(`Cannot write to ${shortenPath(shellInfo.profilePath)}`);
+    p.log.message("");
+    p.log.message(pc.bold("Add this line manually to your shell profile:"));
+    p.log.message("");
+    p.log.message(`  ${pc.cyan(getManualInstruction(finalToken, shellInfo.type))}`);
+    console.log();
+  } else {
+    spinner.stop(`Token saved to ${shortenPath(shellInfo.profilePath)}`);
+  }
+
+  // Step 8: Configure MCP clients
+  spinner.start("Configuring MCP clients...");
   const results: { client: string; success: boolean; error?: string }[] = [];
 
   for (const client of selectedClients) {
     try {
-      configureClient(client.configPath, token.trim());
+      configureClient(client.configPath);
       results.push({ client: client.name, success: true });
     } catch (error) {
       results.push({
         client: client.name,
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -178,7 +283,7 @@ async function main() {
 
   spinner.stop("Configuration complete");
 
-  // Show results
+  // Step 9: Show results
   console.log();
   if (successful.length > 0) {
     const resultLines = successful.map((r) => {
@@ -194,6 +299,16 @@ async function main() {
     for (const r of failed) {
       p.log.message(`  ${pc.red("✗")} ${r.client}: ${pc.dim(r.error)}`);
     }
+  }
+
+  // Step 10: Show reload instructions
+  if (tokenResult.success) {
+    console.log();
+    const reloadCmd = getReloadCommand(shellInfo.profilePath, shellInfo.type);
+    p.note(
+      `${pc.bold("To activate the token, run:")}\n\n  ${pc.cyan(reloadCmd)}\n\nOr restart your terminal.`,
+      "Next step"
+    );
   }
 
   console.log();

@@ -14,11 +14,14 @@ npx mcp-intervals init
 ```
 
 This will:
-1. Detect installed MCP clients (Claude Code, Claude Desktop, Cursor, Windsurf)
-2. Let you select which clients to configure
-3. Prompt for your Intervals API token
-4. Validate the token with your Intervals account
-5. Save the configuration automatically
+1. Detect your shell (zsh, bash, or PowerShell)
+2. Store your API token securely in your shell profile (not in config files)
+3. Detect installed MCP clients (Claude Code, Claude Desktop, Cursor, Windsurf)
+4. Configure the selected clients
+
+### Security
+
+The installer stores your API token as an environment variable in your shell profile (`~/.zshrc`, `~/.bashrc`, or PowerShell profile), keeping it out of project files that might be committed to git. MCP config files only contain the command reference, not the token.
 
 ## Manual Setup
 
@@ -28,37 +31,43 @@ This will:
 2. Go to **Options** (bottom-left) > **My Account** > **API Access**
 3. Copy your **API token**
 
-### 2. Install in Claude Code
+### 2. Add the token to your shell profile
 
+Add the following line to your shell profile:
+
+**macOS/Linux (zsh)** - Add to `~/.zshrc`:
 ```bash
-# Available in all your projects (recommended)
-claude mcp add intervals --scope user -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
-
-# Only in the current project, shared with team via .mcp.json (committed to git)
-claude mcp add intervals --scope project -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
-
-# Only for you in the current project (default)
-claude mcp add intervals -e INTERVALS_API_TOKEN=YOUR_TOKEN -- npx -y mcp-intervals
+export INTERVALS_API_TOKEN="YOUR_TOKEN"
 ```
 
-Replace `YOUR_TOKEN` with your actual API token.
+**macOS/Linux (bash)** - Add to `~/.bashrc` or `~/.bash_profile`:
+```bash
+export INTERVALS_API_TOKEN="YOUR_TOKEN"
+```
 
-### 3. Install in Claude Desktop
+**Windows (PowerShell)** - Add to your PowerShell profile:
+```powershell
+$env:INTERVALS_API_TOKEN = "YOUR_TOKEN"
+```
 
-Add this to your config file:
+Then reload your shell or restart your terminal.
 
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+### 3. Configure MCP clients
 
+Add this to your MCP config file (token is read from environment):
+
+**Claude Code:**
+```bash
+claude mcp add intervals --scope user -- npx -y mcp-intervals
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 ```json
 {
   "mcpServers": {
     "intervals": {
       "command": "npx",
-      "args": ["-y", "mcp-intervals"],
-      "env": {
-        "INTERVALS_API_TOKEN": "YOUR_TOKEN"
-      }
+      "args": ["-y", "mcp-intervals"]
     }
   }
 }
@@ -67,17 +76,14 @@ Add this to your config file:
 <details>
 <summary><strong>Cursor</strong></summary>
 
-Add to `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally:
+Add to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "intervals": {
       "command": "npx",
-      "args": ["-y", "mcp-intervals"],
-      "env": {
-        "INTERVALS_API_TOKEN": "YOUR_TOKEN"
-      }
+      "args": ["-y", "mcp-intervals"]
     }
   }
 }
@@ -95,10 +101,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   "mcpServers": {
     "intervals": {
       "command": "npx",
-      "args": ["-y", "mcp-intervals"],
-      "env": {
-        "INTERVALS_API_TOKEN": "YOUR_TOKEN"
-      }
+      "args": ["-y", "mcp-intervals"]
     }
   }
 }

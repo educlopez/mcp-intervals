@@ -143,19 +143,17 @@ export function writeConfig(configPath: string, config: McpConfig): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
-export function configureClient(configPath: string, token: string): void {
+export function configureClient(configPath: string): void {
   const config = readConfig(configPath);
 
   if (!config.mcpServers) {
     config.mcpServers = {};
   }
 
+  // Don't include token in config - it's stored in shell profile
   config.mcpServers.intervals = {
     command: "npx",
     args: ["-y", "mcp-intervals"],
-    env: {
-      INTERVALS_API_TOKEN: token,
-    },
   };
 
   writeConfig(configPath, config);
