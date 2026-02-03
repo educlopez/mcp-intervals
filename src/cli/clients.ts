@@ -135,6 +135,21 @@ function getClientPaths(): Array<{ id: string; name: string; path: string }> {
     });
   }
 
+  // Google Antigravity
+  if (platform === "darwin" || platform === "linux") {
+    clients.push({
+      id: "antigravity",
+      name: "Google Antigravity",
+      path: path.join(home, ".gemini", "antigravity", "mcp_config.json"),
+    });
+  } else if (platform === "win32") {
+    clients.push({
+      id: "antigravity",
+      name: "Google Antigravity",
+      path: path.join(home, ".gemini", "antigravity", "mcp_config.json"),
+    });
+  }
+
   return clients;
 }
 
