@@ -85,6 +85,56 @@ function getClientPaths(): Array<{ id: string; name: string; path: string }> {
     });
   }
 
+  // VS Code (GitHub Copilot) - project level
+  clients.push({
+    id: "vscode-project",
+    name: "VS Code / Copilot (project)",
+    path: path.join(process.cwd(), ".vscode", "mcp.json"),
+  });
+
+  // Cline (VS Code extension)
+  if (platform === "darwin") {
+    clients.push({
+      id: "cline",
+      name: "Cline",
+      path: path.join(home, "Library", "Application Support", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"),
+    });
+  } else if (platform === "linux") {
+    clients.push({
+      id: "cline",
+      name: "Cline",
+      path: path.join(home, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"),
+    });
+  } else if (platform === "win32") {
+    clients.push({
+      id: "cline",
+      name: "Cline",
+      path: path.join(process.env.APPDATA || "", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"),
+    });
+  }
+
+  // Continue
+  clients.push({
+    id: "continue",
+    name: "Continue",
+    path: path.join(home, ".continue", "config.json"),
+  });
+
+  // Zed
+  if (platform === "darwin") {
+    clients.push({
+      id: "zed",
+      name: "Zed",
+      path: path.join(home, ".config", "zed", "settings.json"),
+    });
+  } else if (platform === "linux") {
+    clients.push({
+      id: "zed",
+      name: "Zed",
+      path: path.join(home, ".config", "zed", "settings.json"),
+    });
+  }
+
   return clients;
 }
 
@@ -143,9 +193,40 @@ export function writeConfig(configPath: string, config: McpConfig): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
-export function configureClient(configPath: string): void {
+export function configureClient(configPath: string, clientId?: string): void {
   const config = readConfig(configPath);
 
+  // Zed uses a different format (context_servers)
+  if (clientId === "zed") {
+    const zedConfig = config as Record<string, unknown>;
+    if (!zedConfig.context_servers) {
+      zedConfig.context_servers = {};
+    }
+    (zedConfig.context_servers as Record<string, unknown>).intervals = {
+      command: {
+        path: "npx",
+        args: ["-y", "mcp-intervals@latest"],
+      },
+    };
+    writeConfig(configPath, zedConfig as McpConfig);
+    return;
+  }
+
+  // Continue uses mcpServers inside the config
+  if (clientId === "continue") {
+    const continueConfig = config as Record<string, unknown>;
+    if (!continueConfig.mcpServers) {
+      continueConfig.mcpServers = {};
+    }
+    (continueConfig.mcpServers as Record<string, unknown>).intervals = {
+      command: "npx",
+      args: ["-y", "mcp-intervals@latest"],
+    };
+    writeConfig(configPath, continueConfig as McpConfig);
+    return;
+  }
+
+  // Standard format (Claude, Cursor, Windsurf, VS Code, Cline)
   if (!config.mcpServers) {
     config.mcpServers = {};
   }
@@ -160,9 +241,17 @@ export function configureClient(configPath: string): void {
   writeConfig(configPath, config);
 }
 
-export function hasExistingConfig(configPath: string): boolean {
+export function hasExistingConfig(configPath: string, clientId?: string): boolean {
   try {
     const config = readConfig(configPath);
+
+    // Zed uses context_servers
+    if (clientId === "zed") {
+      const zedConfig = config as Record<string, unknown>;
+      const contextServers = zedConfig.context_servers as Record<string, unknown> | undefined;
+      return contextServers?.intervals !== undefined;
+    }
+
     return config.mcpServers?.intervals !== undefined;
   } catch {
     return false;

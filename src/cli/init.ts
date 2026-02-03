@@ -194,7 +194,7 @@ async function main() {
 
   // Step 5: Select clients
   const clientChoices = detectedClients.map((client) => {
-    const hasExisting = hasExistingConfig(client.configPath);
+    const hasExisting = hasExistingConfig(client.configPath, client.id);
     return {
       value: client.id,
       label: client.name,
@@ -204,7 +204,7 @@ async function main() {
 
   // Pre-select clients that don't have existing config
   const initialSelected = detectedClients
-    .filter((c) => !hasExistingConfig(c.configPath))
+    .filter((c) => !hasExistingConfig(c.configPath, c.id))
     .map((c) => c.id);
 
   console.log();
@@ -267,7 +267,7 @@ async function main() {
 
   for (const client of selectedClients) {
     try {
-      configureClient(client.configPath);
+      configureClient(client.configPath, client.id);
       results.push({ client: client.name, success: true });
     } catch (error) {
       results.push({
