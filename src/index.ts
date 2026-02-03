@@ -2,10 +2,10 @@
 
 // Handle CLI subcommands
 if (process.argv[2] === "init") {
-  import("./cli/init.js");
+  await import("./cli/init.js");
 } else {
   // MCP Server mode
-  startServer();
+  await startServer();
 }
 
 async function startServer() {
