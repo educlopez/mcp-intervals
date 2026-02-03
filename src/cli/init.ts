@@ -202,9 +202,9 @@ async function main() {
     };
   });
 
-  // Pre-select clients that don't have existing config
+  // Pre-select clients that already have intervals config (for easy update)
   const initialSelected = detectedClients
-    .filter((c) => !hasExistingConfig(c.configPath, c.id))
+    .filter((c) => hasExistingConfig(c.configPath, c.id))
     .map((c) => c.id);
 
   console.log();
