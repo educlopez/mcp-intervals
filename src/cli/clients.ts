@@ -151,9 +151,10 @@ export function configureClient(configPath: string): void {
   }
 
   // Don't include token in config - it's stored in shell profile
+  // Use @latest to always fetch the newest version (avoids npx cache issues)
   config.mcpServers.intervals = {
     command: "npx",
-    args: ["-y", "mcp-intervals"],
+    args: ["-y", "mcp-intervals@latest"],
   };
 
   writeConfig(configPath, config);
