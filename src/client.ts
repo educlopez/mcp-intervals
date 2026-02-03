@@ -203,9 +203,11 @@ export class IntervalsClient {
   // --- Me (current user) ---
 
   async getMe() {
-    const data = await this.request<{ me: Record<string, unknown> }>(
-      `/me/`
-    );
-    return data.me;
+    const data = await this.request<{
+      personid: number;
+      me: Array<Record<string, unknown>>;
+    }>(`/me/`);
+    // Return the first user object with personid from the top-level response
+    return { ...data.me[0], personid: data.personid };
   }
 }
