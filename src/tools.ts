@@ -32,7 +32,7 @@ export function registerTools(
   // --- update_task ---
   server.tool(
     "update_task",
-    "Update fields on an Intervals task (status, assignee, priority, title, due date, owner).",
+    "Update fields on an Intervals task (status, assignee, priority, title, description, due date, owner).",
     {
       taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       statusid: z
@@ -48,6 +48,10 @@ export function registerTools(
         .optional()
         .describe("New priority ID (use intervals://priorities resource for valid IDs)"),
       title: z.string().optional().describe("New task title"),
+      summary: z
+        .string()
+        .optional()
+        .describe("New task description/summary (HTML is accepted)"),
       datedue: z
         .string()
         .optional()
@@ -168,6 +172,85 @@ export function registerTools(
     },
     async ({ milestoneId }) => {
       const data = await client.getMilestone(milestoneId);
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(data, null, 2) },
+        ],
+      };
+    }
+  );
+
+  // --- add_time_entry ---
+  server.tool(
+    "add_time_entry",
+    "Add a time entry to an Intervals task. Records time worked as billable or unbillable with a specific work type.",
+    {
+      taskId: z
+        .number()
+        .describe("The local task ID (as shown in the Intervals web UI)"),
+      worktypeid: z
+        .number()
+        .describe("Work type ID (use intervals://worktypes resource for valid IDs)"),
+      date: z
+        .string()
+        .describe("Date of the time entry in YYYY-MM-DD format"),
+      time: z
+        .number()
+        .describe("Time worked in decimal hours (e.g., 1.5 for 1 hour 30 minutes)"),
+      billable: z
+        .boolean()
+        .describe("Whether the time is billable (true) or unbillable (false)"),
+      description: z
+        .string()
+        .optional()
+        .describe("Optional description of work performed"),
+    },
+    async ({ taskId, worktypeid, date, time, billable, description }) => {
+      const internalId = await client.resolveTaskId(taskId);
+      const data = await client.addTimeEntry({
+        taskid: internalId,
+        worktypeid,
+        date,
+        time,
+        billable,
+        description,
+      });
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(data, null, 2) },
+        ],
+      };
+    }
+  );
+
+  // --- get_time_entries ---
+  server.tool(
+    "get_time_entries",
+    "Retrieve time entries from Intervals. Can filter by task, person, or date range.",
+    {
+      taskId: z
+        .number()
+        .optional()
+        .describe("Filter by local task ID (as shown in the Intervals web UI)"),
+      datebegin: z
+        .string()
+        .optional()
+        .describe("Start date filter in YYYY-MM-DD format"),
+      dateend: z
+        .string()
+        .optional()
+        .describe("End date filter in YYYY-MM-DD format"),
+    },
+    async ({ taskId, datebegin, dateend }) => {
+      let internalTaskId: number | undefined;
+      if (taskId) {
+        internalTaskId = await client.resolveTaskId(taskId);
+      }
+      const data = await client.getTimeEntries({
+        taskid: internalTaskId,
+        datebegin,
+        dateend,
+      });
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },

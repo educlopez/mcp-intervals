@@ -50,4 +50,27 @@ export function registerResources(
       };
     }
   );
+
+  // --- Work Types ---
+  server.resource(
+    "work-types",
+    "intervals://worktypes",
+    {
+      description:
+        "List of all work types with their IDs. Use these IDs when adding a time entry.",
+      mimeType: "application/json",
+    },
+    async () => {
+      const data = await client.getWorkTypes();
+      return {
+        contents: [
+          {
+            uri: "intervals://worktypes",
+            mimeType: "application/json",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    }
+  );
 }
