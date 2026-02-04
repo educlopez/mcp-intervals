@@ -337,10 +337,17 @@ export function registerTools(
     async ({ documentId }) => {
       // Get document metadata to know the filename
       const docData = await client.getDocument(documentId);
-      const document =
-        (docData as { document?: Array<Record<string, unknown>> }).document?.[0] ??
-        docData;
-      const filename = (document.filename as string) || "unknown";
+      const docField = (docData as Record<string, unknown>).document;
+      let document: Record<string, unknown>;
+      if (Array.isArray(docField)) {
+        document = docField[0];
+      } else if (docField && typeof docField === "object") {
+        document = docField as Record<string, unknown>;
+      } else {
+        document = docData as Record<string, unknown>;
+      }
+      const filename =
+        (document.filename as string) || (document.title as string) || "unknown";
       const title = (document.title as string) || filename;
 
       const imageMimeType = getMimeTypeFromFilename(filename);
