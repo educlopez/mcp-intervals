@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { PDFParse } from "pdf-parse";
 import { IntervalsClient } from "./client.js";
 import {
   parseTaskIdFromUrl,
@@ -328,7 +329,7 @@ export function registerTools(
   // --- download_document ---
   server.tool(
     "download_document",
-    "Download a document from Intervals. For images (png, jpg, gif, webp, bmp), returns the image inline so it can be viewed directly. For other file types, returns the document metadata.",
+    "Download a document from Intervals. For images (png, jpg, gif, webp, bmp), returns the image inline so it can be viewed directly. For PDFs, extracts and returns the text content. For other file types, returns the document metadata.",
     {
       documentId: z
         .number()
@@ -395,7 +396,36 @@ export function registerTools(
         }
       }
 
-      // Non-image file: return metadata only
+      // PDF: extract text content
+      if (filename.toLowerCase().endsWith(".pdf")) {
+        try {
+          const { buffer } = await client.downloadDocument(documentId);
+          const sizeMB = buffer.byteLength / (1024 * 1024);
+          const pdf = new PDFParse({ data: new Uint8Array(buffer) });
+          const textResult = await pdf.getText();
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Document: ${title} (${filename}, ${sizeMB.toFixed(2)} MB, ${textResult.total} pages)\n\n${textResult.text}`,
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Document "${title}" (${filename}) is a PDF but text extraction failed: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      // Other file types: return metadata only
       return {
         content: [
           {
