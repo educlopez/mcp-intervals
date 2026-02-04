@@ -51,7 +51,9 @@ export function registerTools(
       summary: z
         .string()
         .optional()
-        .describe("New task description/summary (HTML is accepted)"),
+        .describe(
+          'New task description/summary (HTML is accepted). IMPORTANT: For checklists, use Intervals-specific HTML — do NOT use emojis (✅, ☐) or markdown checkboxes. Use: <ul class="checklist"><li class="checklist-checked">Done item</li><li>Pending item</li></ul>. Checked items get class="checklist-checked", unchecked items have no class.'
+        ),
       datedue: z
         .string()
         .optional()
@@ -99,7 +101,9 @@ export function registerTools(
       taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       note: z
         .string()
-        .describe("The note content (HTML is accepted)"),
+        .describe(
+          'The note content (HTML is accepted). IMPORTANT: For checklists, use Intervals-specific HTML — do NOT use emojis (✅, ☐) or markdown checkboxes. Use: <ul class="checklist"><li class="checklist-checked">Done item</li><li>Pending item</li></ul>. Checked items get class="checklist-checked", unchecked items have no class.'
+        ),
       isPublic: z
         .boolean()
         .default(true)
