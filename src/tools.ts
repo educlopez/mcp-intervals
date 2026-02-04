@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { IntervalsClient } from "./client.js";
-import { parseTaskIdFromUrl } from "./utils.js";
+import {
+  parseTaskIdFromUrl,
+  getMimeTypeFromFilename,
+  isImageMimeType,
+} from "./utils.js";
 
 export function registerTools(
   server: McpServer,
@@ -21,11 +25,37 @@ export function registerTools(
     async ({ task }) => {
       const localId = parseTaskIdFromUrl(task);
       const data = await client.getTaskByLocalId(localId);
-      return {
-        content: [
-          { type: "text", text: JSON.stringify(data, null, 2) },
-        ],
-      };
+      const internalId = Number(data.id);
+
+      const content: Array<
+        { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+      > = [{ type: "text" as const, text: JSON.stringify(data, null, 2) }];
+
+      // Fetch associated documents
+      try {
+        const docsData = await client.getDocuments({ taskid: internalId });
+        const documents = (docsData as Record<string, unknown>).document;
+        if (Array.isArray(documents) && documents.length > 0) {
+          const docSummary = documents.map((doc: Record<string, unknown>) => ({
+            id: doc.id,
+            filename: doc.filename,
+            title: doc.title,
+            dateCreated: doc.datecreated,
+            size: doc.filesize,
+          }));
+          content.push({
+            type: "text" as const,
+            text:
+              `\n--- Attached Documents (${documents.length}) ---\n` +
+              JSON.stringify(docSummary, null, 2) +
+              `\n\nUse the download_document tool with the document ID to view image attachments.`,
+          });
+        }
+      } catch {
+        // Silently ignore document fetch failures
+      }
+
+      return { content };
     }
   );
 
@@ -258,6 +288,123 @@ export function registerTools(
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
+        ],
+      };
+    }
+  );
+
+  // --- get_documents ---
+  server.tool(
+    "get_documents",
+    "List documents/attachments from Intervals. Can filter by task, project, or person. Returns document metadata (filename, title, size, dates) but not file contents. Use download_document to retrieve file contents.",
+    {
+      taskId: z
+        .number()
+        .optional()
+        .describe(
+          "Filter by local task ID (as shown in the Intervals web UI)"
+        ),
+      projectId: z.number().optional().describe("Filter by project ID"),
+      personId: z.number().optional().describe("Filter by person ID"),
+    },
+    async ({ taskId, projectId, personId }) => {
+      let internalTaskId: number | undefined;
+      if (taskId) {
+        internalTaskId = await client.resolveTaskId(taskId);
+      }
+      const data = await client.getDocuments({
+        taskid: internalTaskId,
+        projectid: projectId,
+        personid: personId,
+      });
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(data, null, 2) },
+        ],
+      };
+    }
+  );
+
+  // --- download_document ---
+  server.tool(
+    "download_document",
+    "Download a document from Intervals. For images (png, jpg, gif, webp, bmp), returns the image inline so it can be viewed directly. For other file types, returns the document metadata.",
+    {
+      documentId: z
+        .number()
+        .describe("The numeric document ID from Intervals"),
+    },
+    async ({ documentId }) => {
+      // Get document metadata to know the filename
+      const docData = await client.getDocument(documentId);
+      const document =
+        (docData as { document?: Array<Record<string, unknown>> }).document?.[0] ??
+        docData;
+      const filename = (document.filename as string) || "unknown";
+      const title = (document.title as string) || filename;
+
+      const imageMimeType = getMimeTypeFromFilename(filename);
+
+      if (imageMimeType && isImageMimeType(imageMimeType)) {
+        try {
+          const { buffer } = await client.downloadDocument(documentId);
+          const base64 = Buffer.from(buffer).toString("base64");
+          const sizeMB = buffer.byteLength / (1024 * 1024);
+
+          const content: Array<
+            { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+          > = [
+            {
+              type: "text" as const,
+              text: `Document: ${title} (${filename}, ${sizeMB.toFixed(2)} MB)`,
+            },
+          ];
+
+          if (imageMimeType === "image/svg+xml") {
+            const svgText = new TextDecoder().decode(buffer);
+            content.push({
+              type: "text" as const,
+              text: `SVG content:\n${svgText}`,
+            });
+          } else {
+            content.push({
+              type: "image" as const,
+              data: base64,
+              mimeType: imageMimeType,
+            });
+          }
+
+          return { content };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Document "${title}" (${filename}) is an image but could not be downloaded: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      // Non-image file: return metadata only
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                documentId,
+                filename,
+                title,
+                message: "This file type cannot be rendered inline.",
+                ...document,
+              },
+              null,
+              2
+            ),
+          },
         ],
       };
     }

@@ -52,6 +52,35 @@ export class IntervalsClient {
     return response.json() as Promise<T>;
   }
 
+  private async requestBinary(
+    path: string,
+    params?: Record<string, string | number | boolean>
+  ): Promise<{ buffer: ArrayBuffer; contentType: string }> {
+    let url = `${this.baseUrl}${path}`;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        searchParams.set(key, String(value));
+      }
+      url += `?${searchParams.toString()}`;
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: this.authHeader },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Intervals API error ${response.status}: ${text}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const contentType =
+      response.headers.get("content-type") || "application/octet-stream";
+    return { buffer, contentType };
+  }
+
   // --- Task ---
 
   async getTask(id: number) {
@@ -128,6 +157,34 @@ export class IntervalsClient {
       `/milestone/${id}/`
     );
     return data;
+  }
+
+  // --- Documents ---
+
+  async getDocuments(
+    params: {
+      taskid?: number;
+      projectid?: number;
+      personid?: number;
+    } = {}
+  ) {
+    const data = await this.request<Record<string, unknown>>(`/document/`, {
+      params: params as Record<string, string | number | boolean>,
+    });
+    return data;
+  }
+
+  async getDocument(id: number) {
+    const data = await this.request<Record<string, unknown>>(
+      `/document/${id}/`
+    );
+    return data;
+  }
+
+  async downloadDocument(
+    id: number
+  ): Promise<{ buffer: ArrayBuffer; contentType: string }> {
+    return this.requestBinary(`/document/${id}/download/`);
   }
 
   // --- Resources (statuses & priorities) ---
