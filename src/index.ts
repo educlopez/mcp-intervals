@@ -14,6 +14,11 @@ async function startServer() {
   const { IntervalsClient } = await import("./client.js");
   const { registerTools } = await import("./tools.js");
   const { registerResources } = await import("./resources.js");
+  const { createRequire } = await import("node:module");
+
+  // Read version from package.json so it never drifts from the published one.
+  const require = createRequire(import.meta.url);
+  const { version } = require("../package.json") as { version: string };
 
   const API_TOKEN = process.env.INTERVALS_API_TOKEN;
 
@@ -28,7 +33,7 @@ async function startServer() {
 
   const server = new McpServer({
     name: "mcp-intervals",
-    version: "1.5.0",
+    version,
   });
 
   registerTools(server, client);
