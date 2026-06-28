@@ -28,7 +28,7 @@ async function startServer() {
 
   const server = new McpServer({
     name: "mcp-intervals",
-    version: "1.0.0",
+    version: "1.5.0",
   });
 
   registerTools(server, client);

@@ -16,10 +16,12 @@ export async function validateToken(token: string): Promise<ValidationResult> {
     });
 
     if (response.ok) {
-      const data = (await response.json()) as { me?: { company?: string } };
+      const data = (await response.json()) as {
+        me?: Array<{ company?: string }>;
+      };
       return {
         valid: true,
-        workspace: data.me?.company || "Unknown workspace",
+        workspace: data.me?.[0]?.company || "Unknown workspace",
       };
     }
 

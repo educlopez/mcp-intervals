@@ -45,7 +45,7 @@ export class IntervalsClient {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(
-        `Intervals API error ${response.status}: ${text}`
+        `Intervals API error ${response.status}: ${text.slice(0, 500)}`
       );
     }
 
@@ -224,7 +224,12 @@ export class IntervalsClient {
   }) {
     // First get the current user's person ID
     const me = await this.getMe();
-    const personid = me.personid as number;
+    const personid = me.personid;
+    if (typeof personid !== "number") {
+      throw new Error(
+        "Could not determine current user's person ID from Intervals /me/ response."
+      );
+    }
 
     const data = await this.request<Record<string, unknown>>(
       `/time/`,
@@ -262,9 +267,9 @@ export class IntervalsClient {
   async getMe() {
     const data = await this.request<{
       personid: number;
-      me: Array<Record<string, unknown>>;
+      me?: Array<Record<string, unknown>>;
     }>(`/me/`);
     // Return the first user object with personid from the top-level response
-    return { ...data.me[0], personid: data.personid };
+    return { ...(data.me?.[0] ?? {}), personid: data.personid };
   }
 }

@@ -8,6 +8,11 @@ import {
   isImageMimeType,
 } from "./utils.js";
 
+// Cap on inline-rendered downloads (images/PDFs). Base64 inflates payload
+// ~33% and the result is fed into the model context, so guard against
+// flooding memory/context with oversized attachments.
+const MAX_INLINE_DOWNLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
+
 export function registerTools(
   server: McpServer,
   client: IntervalsClient
@@ -341,6 +346,17 @@ export function registerTools(
       const docField = (docData as Record<string, unknown>).document;
       let document: Record<string, unknown>;
       if (Array.isArray(docField)) {
+        if (docField.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No document found with ID ${documentId}.`,
+              },
+            ],
+            isError: true,
+          };
+        }
         document = docField[0];
       } else if (docField && typeof docField === "object") {
         document = docField as Record<string, unknown>;
@@ -351,11 +367,39 @@ export function registerTools(
         (document.filename as string) || (document.title as string) || "unknown";
       const title = (document.title as string) || filename;
 
+      // Reject oversized files before downloading them into memory.
+      const reportedSize = Number(document.filesize);
+      if (
+        Number.isFinite(reportedSize) &&
+        reportedSize > MAX_INLINE_DOWNLOAD_BYTES
+      ) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Document "${title}" (${filename}) is ${(reportedSize / (1024 * 1024)).toFixed(2)} MB, exceeding the ${MAX_INLINE_DOWNLOAD_BYTES / (1024 * 1024)} MB inline limit. Download it directly from Intervals instead.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const imageMimeType = getMimeTypeFromFilename(filename);
 
       if (imageMimeType && isImageMimeType(imageMimeType)) {
         try {
           const { buffer } = await client.downloadDocument(documentId);
+          if (buffer.byteLength > MAX_INLINE_DOWNLOAD_BYTES) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Document "${title}" (${filename}) is ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB, exceeding the ${MAX_INLINE_DOWNLOAD_BYTES / (1024 * 1024)} MB inline limit. Download it directly from Intervals instead.`,
+                },
+              ],
+              isError: true,
+            };
+          }
           const base64 = Buffer.from(buffer).toString("base64");
           const sizeMB = buffer.byteLength / (1024 * 1024);
 
