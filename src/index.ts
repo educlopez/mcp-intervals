@@ -12,7 +12,7 @@ async function startServer() {
   const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
   const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
   const { IntervalsClient } = await import("./client.js");
-  const { registerTools } = await import("./tools.js");
+  const { registerTools } = await import("./tools/index.js");
   const { registerResources } = await import("./resources.js");
   const { createRequire } = await import("node:module");
 

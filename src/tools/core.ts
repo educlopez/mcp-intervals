@@ -1,19 +1,29 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PDFParse } from "pdf-parse";
-import { IntervalsClient } from "./client.js";
+import { IntervalsClient } from "../client.js";
+import {
+  idOrList,
+  limitParam,
+  notificationShape,
+  offsetParam,
+  splitNotifications,
+} from "./helpers.js";
 import {
   parseTaskIdFromUrl,
   getMimeTypeFromFilename,
   isImageMimeType,
-} from "./utils.js";
+} from "../utils.js";
 
 // Cap on inline-rendered downloads (images/PDFs). Base64 inflates payload
 // ~33% and the result is fed into the model context, so guard against
 // flooding memory/context with oversized attachments.
 const MAX_INLINE_DOWNLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
 
-export function registerTools(
+const NOTIFICATION_NOTE =
+  " Emails are not sent unless send_notifications is true.";
+
+export function registerCoreTools(
   server: McpServer,
   client: IntervalsClient
 ) {
@@ -68,17 +78,17 @@ export function registerTools(
   // --- update_task ---
   server.tool(
     "update_task",
-    "Update fields on an Intervals task (status, assignee, priority, title, description, due date, owner).",
+    "Update fields on an Intervals task (status, assignee, priority, title, description, dates, owner, project, module, milestone, followers, estimate)." +
+      NOTIFICATION_NOTE,
     {
       taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       statusid: z
         .number()
         .optional()
         .describe("New status ID (use intervals://statuses resource for valid IDs)"),
-      assigneeid: z
-        .number()
+      assigneeid: idOrList
         .optional()
-        .describe("New assignee person ID"),
+        .describe("New assignee person ID, or comma-delimited list of IDs"),
       priorityid: z
         .number()
         .optional()
@@ -94,12 +104,25 @@ export function registerTools(
         .string()
         .optional()
         .describe("New due date in YYYY-MM-DD format"),
-      ownerid: z
-        .number()
+      ownerid: idOrList
         .optional()
-        .describe("New owner person ID"),
+        .describe("New owner person ID, or comma-delimited list of IDs"),
+      projectid: z.number().optional().describe("New project ID"),
+      moduleid: z.number().optional().describe("New module ID"),
+      milestoneid: z.number().optional().describe("New milestone ID"),
+      followerid: idOrList
+        .optional()
+        .describe("Follower person ID, or comma-delimited list of IDs"),
+      estimate: z.number().optional().describe("Estimated hours"),
+      dateopen: z.string().optional().describe("Open date in YYYY-MM-DD format"),
+      dateclosed: z
+        .string()
+        .optional()
+        .describe("Closed date in YYYY-MM-DD format (set to close the task)"),
+      ...notificationShape,
     },
-    async ({ taskId, ...fields }) => {
+    async ({ taskId, ...args }) => {
+      const { fields, notify } = splitNotifications(args);
       // Remove undefined fields
       const updateData: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(fields)) {
@@ -120,7 +143,7 @@ export function registerTools(
       }
 
       const internalId = await client.resolveTaskId(taskId);
-      const data = await client.updateTask(internalId, updateData);
+      const data = await client.updateTask(internalId, updateData, notify);
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
@@ -132,7 +155,7 @@ export function registerTools(
   // --- add_task_note ---
   server.tool(
     "add_task_note",
-    "Add a comment/note to an Intervals task.",
+    "Add a comment/note to an Intervals task." + NOTIFICATION_NOTE,
     {
       taskId: z.number().describe("The local task ID (as shown in the Intervals web UI)"),
       note: z
@@ -146,13 +169,15 @@ export function registerTools(
         .describe(
           "Whether the note is visible to executive users (defaults to true)"
         ),
+      ...notificationShape,
     },
-    async ({ taskId, note, isPublic }) => {
+    async ({ taskId, note, isPublic, ...flags }) => {
       const internalId = await client.resolveTaskId(taskId);
       const data = await client.addTaskNote(
         internalId,
         note,
-        isPublic
+        isPublic,
+        splitNotifications(flags).notify
       );
       return {
         content: [
@@ -165,15 +190,21 @@ export function registerTools(
   // --- get_task_notes ---
   server.tool(
     "get_task_notes",
-    "Retrieve all comments/notes on an Intervals task.",
+    "Retrieve comments/notes on an Intervals task.",
     {
       taskId: z
         .number()
         .describe("The local task ID (as shown in the Intervals web UI)"),
+      authorid: z.number().optional().describe("Filter by author person ID"),
+      public: z.boolean().optional().describe("Filter by public notes"),
+      datebegin: z.string().optional().describe("Start date filter in YYYY-MM-DD format"),
+      dateend: z.string().optional().describe("End date filter in YYYY-MM-DD format"),
+      limit: limitParam,
+      offset: offsetParam,
     },
-    async ({ taskId }) => {
+    async ({ taskId, ...filters }) => {
       const internalId = await client.resolveTaskId(taskId);
-      const data = await client.getTaskNotes(internalId);
+      const data = await client.getTaskNotes(internalId, filters);
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
@@ -223,7 +254,7 @@ export function registerTools(
   // --- add_time_entry ---
   server.tool(
     "add_time_entry",
-    "Add a time entry to an Intervals task. Records time worked as billable or unbillable with a specific work type.",
+    "Add a time entry to an Intervals task. Records time worked as billable or unbillable with a specific work type. Defaults to the current user." + NOTIFICATION_NOTE,
     {
       taskId: z
         .number()
@@ -244,17 +275,38 @@ export function registerTools(
         .string()
         .optional()
         .describe("Optional description of work performed"),
+      personid: z
+        .number()
+        .optional()
+        .describe("Person ID to log the time for (defaults to the current user)"),
+      moduleid: z.number().optional().describe("Optional module ID"),
+      ...notificationShape,
     },
-    async ({ taskId, worktypeid, date, time, billable, description }) => {
+    async ({
+      taskId,
+      worktypeid,
+      date,
+      time,
+      billable,
+      description,
+      personid,
+      moduleid,
+      ...flags
+    }) => {
       const internalId = await client.resolveTaskId(taskId);
-      const data = await client.addTimeEntry({
-        taskid: internalId,
-        worktypeid,
-        date,
-        time,
-        billable,
-        description,
-      });
+      const data = await client.addTimeEntry(
+        {
+          taskid: internalId,
+          worktypeid,
+          date,
+          time,
+          billable,
+          description,
+          personid,
+          moduleid,
+        },
+        splitNotifications(flags).notify
+      );
       return {
         content: [
           { type: "text", text: JSON.stringify(data, null, 2) },
@@ -266,7 +318,7 @@ export function registerTools(
   // --- get_time_entries ---
   server.tool(
     "get_time_entries",
-    "Retrieve time entries from Intervals. Can filter by task, person, or date range.",
+    "Retrieve time entries from Intervals. Can filter by task, person, project, billable status, or date range.",
     {
       taskId: z
         .number()
@@ -280,16 +332,20 @@ export function registerTools(
         .string()
         .optional()
         .describe("End date filter in YYYY-MM-DD format"),
+      personid: z.number().optional().describe("Filter by person ID"),
+      projectid: z.number().optional().describe("Filter by project ID"),
+      billable: z.boolean().optional().describe("Filter by billable status"),
+      limit: limitParam,
+      offset: offsetParam,
     },
-    async ({ taskId, datebegin, dateend }) => {
+    async ({ taskId, ...filters }) => {
       let internalTaskId: number | undefined;
       if (taskId) {
         internalTaskId = await client.resolveTaskId(taskId);
       }
       const data = await client.getTimeEntries({
         taskid: internalTaskId,
-        datebegin,
-        dateend,
+        ...filters,
       });
       return {
         content: [
@@ -312,8 +368,14 @@ export function registerTools(
         ),
       projectId: z.number().optional().describe("Filter by project ID"),
       personId: z.number().optional().describe("Filter by person ID"),
+      milestoneid: z.number().optional().describe("Filter by milestone ID"),
+      clientid: z.number().optional().describe("Filter by client ID"),
+      search: z.string().optional().describe("Search text"),
+      public: z.boolean().optional().describe("Filter by public documents"),
+      limit: limitParam,
+      offset: offsetParam,
     },
-    async ({ taskId, projectId, personId }) => {
+    async ({ taskId, projectId, personId, ...filters }) => {
       let internalTaskId: number | undefined;
       if (taskId) {
         internalTaskId = await client.resolveTaskId(taskId);
@@ -322,6 +384,7 @@ export function registerTools(
         taskid: internalTaskId,
         projectid: projectId,
         personid: personId,
+        ...filters,
       });
       return {
         content: [

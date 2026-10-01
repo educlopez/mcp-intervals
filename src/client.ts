@@ -1,7 +1,31 @@
-export interface IntervalsRequestOptions {
+export type QueryParams = Record<string, string | number | boolean | undefined>;
+
+/**
+ * Opt-in notification controls for write requests. The Intervals API sends no
+ * emails by default, so nothing is added unless a flag is explicitly true.
+ */
+export interface NotificationOptions {
+  /** Maps to `X-Intervals-Send-Notifications: t` (emails are NOT sent otherwise). */
+  sendNotifications?: boolean;
+  /** Maps to `X-Intervals-Disable-Action-Notes: t` (suppress automatic action notes). */
+  disableActionNotes?: boolean;
+}
+
+export interface IntervalsRequestOptions extends NotificationOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: Record<string, unknown>;
-  params?: Record<string, string | number | boolean>;
+  params?: QueryParams;
+}
+
+function buildQueryString(params?: QueryParams): string {
+  if (!params) return "";
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    searchParams.set(key, String(value));
+  }
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
 }
 
 export class IntervalsClient {
@@ -17,21 +41,26 @@ export class IntervalsClient {
     path: string,
     options: IntervalsRequestOptions = {}
   ): Promise<T> {
-    const { method = "GET", body, params } = options;
+    const {
+      method = "GET",
+      body,
+      params,
+      sendNotifications,
+      disableActionNotes,
+    } = options;
 
-    let url = `${this.baseUrl}${path}`;
-    if (params) {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        searchParams.set(key, String(value));
-      }
-      url += `?${searchParams.toString()}`;
-    }
+    const url = `${this.baseUrl}${path}${buildQueryString(params)}`;
 
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
       Accept: "application/json",
     };
+    if (sendNotifications) {
+      headers["X-Intervals-Send-Notifications"] = "t";
+    }
+    if (disableActionNotes) {
+      headers["X-Intervals-Disable-Action-Notes"] = "t";
+    }
 
     const fetchOptions: RequestInit = { method, headers };
 
@@ -49,21 +78,17 @@ export class IntervalsClient {
       );
     }
 
-    return response.json() as Promise<T>;
+    // Successful writes (e.g. DELETE) may return an empty body.
+    const text = await response.text();
+    if (!text.trim()) return {} as T;
+    return JSON.parse(text) as T;
   }
 
   private async requestBinary(
     path: string,
-    params?: Record<string, string | number | boolean>
+    params?: QueryParams
   ): Promise<{ buffer: ArrayBuffer; contentType: string }> {
-    let url = `${this.baseUrl}${path}`;
-    if (params) {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        searchParams.set(key, String(value));
-      }
-      url += `?${searchParams.toString()}`;
-    }
+    const url = `${this.baseUrl}${path}${buildQueryString(params)}`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -72,13 +97,56 @@ export class IntervalsClient {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Intervals API error ${response.status}: ${text}`);
+      throw new Error(`Intervals API error ${response.status}: ${text.slice(0, 500)}`);
     }
 
     const buffer = await response.arrayBuffer();
     const contentType =
       response.headers.get("content-type") || "application/octet-stream";
     return { buffer, contentType };
+  }
+
+  // --- Generic verbs (used by the declarative endpoint tools) ---
+  // Paths are given without the trailing slash, e.g. "/client" or "/client/12".
+
+  get(path: string, params?: QueryParams) {
+    return this.request<Record<string, unknown>>(`${path}/`, { params });
+  }
+
+  post(
+    path: string,
+    body: Record<string, unknown>,
+    notify: NotificationOptions = {}
+  ) {
+    return this.request<Record<string, unknown>>(`${path}/`, {
+      method: "POST",
+      body,
+      ...notify,
+    });
+  }
+
+  put(
+    path: string,
+    body: Record<string, unknown>,
+    notify: NotificationOptions = {}
+  ) {
+    return this.request<Record<string, unknown>>(`${path}/`, {
+      method: "PUT",
+      body,
+      ...notify,
+    });
+  }
+
+  delete(
+    path: string,
+    params?: QueryParams,
+    notify: NotificationOptions = {}
+  ) {
+    return this.request<Record<string, unknown>>(`${path}/`, {
+      method: "DELETE",
+      params,
+      ...notify,
+    });
   }
 
   // --- Task ---
@@ -108,20 +176,24 @@ export class IntervalsClient {
     return Number(task.id);
   }
 
-  async updateTask(id: number, fields: Record<string, unknown>) {
+  async updateTask(
+    id: number,
+    fields: Record<string, unknown>,
+    notify: NotificationOptions = {}
+  ) {
     const data = await this.request<Record<string, unknown>>(
       `/task/${id}/`,
-      { method: "PUT", body: fields }
+      { method: "PUT", body: fields, ...notify }
     );
     return data;
   }
 
   // --- Task Notes ---
 
-  async getTaskNotes(taskId: number) {
+  async getTaskNotes(taskId: number, filters: QueryParams = {}) {
     const data = await this.request<Record<string, unknown>>(
       `/tasknote/`,
-      { params: { taskid: taskId } }
+      { params: { ...filters, taskid: taskId } }
     );
     return data;
   }
@@ -129,13 +201,15 @@ export class IntervalsClient {
   async addTaskNote(
     taskId: number,
     note: string,
-    isPublic: boolean = true
+    isPublic: boolean = true,
+    notify: NotificationOptions = {}
   ) {
     const data = await this.request<Record<string, unknown>>(
       `/tasknote/`,
       {
         method: "POST",
         body: { taskid: taskId, note, public: isPublic },
+        ...notify,
       }
     );
     return data;
@@ -162,14 +236,10 @@ export class IntervalsClient {
   // --- Documents ---
 
   async getDocuments(
-    params: {
-      taskid?: number;
-      projectid?: number;
-      personid?: number;
-    } = {}
+    params: QueryParams = {}
   ) {
     const data = await this.request<Record<string, unknown>>(`/document/`, {
-      params: params as Record<string, string | number | boolean>,
+      params,
     });
     return data;
   }
@@ -214,17 +284,25 @@ export class IntervalsClient {
 
   // --- Time Entries ---
 
-  async addTimeEntry(fields: {
-    taskid: number;
-    worktypeid: number;
-    date: string;
-    time: number;
-    billable: boolean;
-    description?: string;
-  }) {
-    // First get the current user's person ID
-    const me = await this.getMe();
-    const personid = me.personid;
+  async addTimeEntry(
+    fields: {
+      taskid: number;
+      worktypeid: number;
+      date: string;
+      time: number;
+      billable: boolean;
+      description?: string;
+      personid?: number;
+      moduleid?: number;
+    },
+    notify: NotificationOptions = {}
+  ) {
+    // Default to the current user's person ID
+    let personid = fields.personid;
+    if (personid === undefined) {
+      const me = await this.getMe();
+      personid = me.personid;
+    }
     if (typeof personid !== "number") {
       throw new Error(
         "Could not determine current user's person ID from Intervals /me/ response."
@@ -242,22 +320,19 @@ export class IntervalsClient {
           date: fields.date,
           time: fields.time,
           billable: fields.billable,
+          ...(fields.moduleid !== undefined && { moduleid: fields.moduleid }),
           ...(fields.description && { description: fields.description }),
         },
+        ...notify,
       }
     );
     return data;
   }
 
-  async getTimeEntries(params: {
-    taskid?: number;
-    personid?: number;
-    datebegin?: string;
-    dateend?: string;
-  } = {}) {
+  async getTimeEntries(params: QueryParams = {}) {
     const data = await this.request<Record<string, unknown>>(
       `/time/`,
-      { params: params as Record<string, string | number | boolean> }
+      { params }
     );
     return data;
   }

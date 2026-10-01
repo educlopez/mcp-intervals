@@ -111,16 +111,43 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Available Tools
 
-| Tool               | Description                                                                  |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `get_task`         | Get task details by local ID or Intervals URL                                |
-| `update_task`      | Update task status, assignee, priority, title, description, due date, owner  |
-| `add_task_note`    | Add a comment/note to a task (supports HTML)                                 |
-| `get_task_notes`   | Retrieve all comments/notes on a task                                        |
-| `add_time_entry`   | Add a time entry to a task (billable/unbillable with work type)              |
-| `get_time_entries` | Retrieve time entries (filter by task, date range)                           |
-| `get_project`      | Get project details (name, client, dates, budget)                            |
-| `get_milestone`    | Get milestone details (title, due date, progress)                            |
+104 tools covering the full Intervals API. Tasks are addressed by the **local task ID** shown in the web UI (or a task URL for `get_task`); every other record uses its numeric API ID.
+
+**Permissions:** some collection endpoints (`worktype`, `invoice`, `expense`, `module`, `payment`) return 403 depending on the user's permission group. Project-scoped alternatives exist: `get_project_worktypes` and `get_project_modules`.
+
+| Area | Tools |
+| ---- | ----- |
+| Tasks | `get_task`, `get_tasks`, `create_task`, `update_task`, `delete_task`, `get_task_statuses`, `get_task_priorities` |
+| Task notes | `get_task_notes`, `add_task_note`, `update_task_note`, `delete_task_note` |
+| Task filters | `get_task_filters`, `get_task_filter`, `create_task_filter`, `update_task_filter` |
+| Time | `add_time_entry`, `get_time_entries`, `update_time_entry`, `delete_time_entry`, `get_worktypes` |
+| Timers | `get_timers`, `start_timer`, `stop_timer` |
+| Expenses | `get_expenses`, `create_expense` |
+| Projects | `get_project`, `get_projects`, `create_project`, `update_project` |
+| Project team | `get_project_team`, `add_project_team_member`, `remove_project_team_member` |
+| Project modules | `get_project_modules`, `add_project_module`, `update_project_module`, `remove_project_module` |
+| Project work types | `get_project_worktypes`, `add_project_worktype`, `update_project_worktype`, `remove_project_worktype` |
+| Project labels | `get_project_labels`, `get_project_label`, `create_project_label`, `update_project_label` |
+| Project notes | `get_project_notes`, `get_project_note`, `create_project_note`, `update_project_note`, `delete_project_note` |
+| Default modules | `get_modules`, `get_module`, `create_module`, `update_module` |
+| Milestones | `get_milestone`, `get_milestones`, `create_milestone`, `update_milestone` |
+| Milestone notes | `get_milestone_notes`, `create_milestone_note`, `update_milestone_note`, `delete_milestone_note` |
+| Requests | `get_requests`, `get_request`, `create_request`, `update_request`, `delete_request` |
+| Clients | `get_clients`, `get_client`, `create_client`, `update_client` |
+| People | `get_people`, `get_person`, `get_me`, `get_groups`, `get_quota` |
+| Contacts | `get_contact_types`, `get_contact_descriptors`, `get_person_contacts`, `create_person_contact`, `update_person_contact`, `delete_person_contact` |
+| Invoices | `get_invoices`, `get_invoice`, `create_invoice`, `get_invoice_terms` |
+| Invoice items | `get_invoice_items`, `create_invoice_item`, `update_invoice_item`, `delete_invoice_item` |
+| Invoice notes | `get_invoice_notes`, `create_invoice_note`, `update_invoice_note`, `delete_invoice_note` |
+| Payments | `get_payments`, `get_payment`, `create_payment`, `update_payment`, `delete_payment`, `get_payment_types` |
+| Documents | `get_documents`, `get_document`, `download_document` (images inline, PDF text), `create_document`, `update_document` |
+
+### Notifications
+
+Every write tool (create/update/delete) accepts two optional booleans:
+
+- `send_notifications` - sends `X-Intervals-Send-Notifications: t`. **Emails are not sent unless this is true** (the API default).
+- `disable_action_notes` - sends `X-Intervals-Disable-Action-Notes: t` to suppress the automatic action notes Intervals adds to tasks and milestones.
 
 ## Resources
 
